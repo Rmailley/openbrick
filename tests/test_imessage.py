@@ -1,6 +1,10 @@
 from openbrick.imessage import format_incoming, incoming_message
 
-CONTACTS = {"mom": "+15550001111"}
+NAMES = {"+15550001111": "mom"}
+
+
+def CONTACTS(address):
+    return NAMES.get(address, address)
 
 
 def msg(**data):

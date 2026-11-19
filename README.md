@@ -36,13 +36,27 @@ You control it by texting **your own main number** from the dumbphone:
 | Text | What happens |
 |---|---|
 | `r sounds good` | Replies to whoever messaged you last, from your main number. Works for group chats and green-bubble friends. |
-| `@mom on my way` or `to mom on my way` | Sends an iMessage to a contact from `config.yaml` |
+| `@henry on my way` or `to henry on my way` | Sends an iMessage to someone in your contacts. First name, full name, last name or nickname all work. |
 | `@+15550001111 hi` / `@sam@icloud.com hi` | Sends an iMessage to a number or Apple ID |
+| `go home to union station` | Texts back transit directions, leaving now ([setup](#transit-directions)) |
 | `2fa 0421 github` | Texts back the current code for that account |
 | `2fa 0421` | Lists your 2FA accounts |
 | `help` | Lists commands |
 
 Only texts from the dumbphone's number (`owner_number`) count as commands. Everything else is forwarded to you.
+
+**Contacts come from your iPhone.** openBrick reads the Mac's Contacts app through BlueBubbles, and the Mac gets them from your iPhone over iCloud. New contacts show up within minutes. Incoming messages show the sender's first name, like `[Henry] running late?`, or the full name when two people share it. For extra short names like `mom`, add them under `contacts:` in `config.yaml`. They take priority over the address book.
+
+**Names don't have to be exact:**
+
+| You text | openBrick |
+|---|---|
+| `@henry see you soon` | Sends to Henry right away, if he's your only Henry |
+| `@mike see you at 8` | `Which mike? 1 Mike Chen 2 Mike Ross. Reply a number.` |
+| `@mike chen see you at 8` | Sends to Mike Chen |
+| `@henny running late` | `Send to Henry Lee: "running late"? Reply y to send.` |
+
+A corrected name never sends without your `y`. With the optional [typo fixing](#typo-fixing) turned on, even garbled commands like `dir hom 2 union statoin` and `txt sam running late` work.
 
 ## Setup
 
@@ -55,7 +69,8 @@ Only texts from the dumbphone's number (`owner_number`) count as commands. Every
 ### 2. Mac
 
 - **Messages → Settings → iMessage:** check your phone number under "You can be reached at," and set "Start new conversations from" to your phone number. Your messages then come from your number, not your email.
-- Install [BlueBubbles Server](https://bluebubbles.app), set a password, and grant the permissions it asks for.
+- Install [BlueBubbles Server](https://bluebubbles.app), set a password, and grant the permissions it asks for, including **Contacts**.
+- **System Settings → [your name] → iCloud:** turn on Contacts, so the Mac has your iPhone's contacts.
 - **System Settings → Energy:** stop the Mac from sleeping.
 
 ### 3. openBrick (on the same Mac)
@@ -70,11 +85,29 @@ chmod 600 config.yaml
 
 In BlueBubbles Server → API & Webhooks, add a webhook for **New Messages** pointing at `http://127.0.0.1:8787/bluebubbles?token=<webhook_token>`.
 
+To keep openBrick running, start it at login and restart it after any crash:
+
+```bash
+scripts/install-mac-services.sh            # openBrick + typo-fixing model
+scripts/install-mac-services.sh --no-llm   # openBrick only
+```
+
+Logs are in `~/Library/Logs/openbrick.log`. Remove the services with `--uninstall`. Also turn on "Start on login" in BlueBubbles Server's settings.
+
 ### 4. Try it
 
 From the dumbphone, text `help` to your main number. The reply arrives in the same conversation. Then ask someone to iMessage you.
 
 On the iPhone you'll see a conversation with the dumbphone's number that holds everything openBrick relayed. That's expected.
+
+### Using a MacBook
+
+A spare MacBook works well, but it has to stay awake and survive restarts:
+
+- **No sleep on power:** System Settings → Battery → Options → "Prevent automatic sleeping on power adapter when the display is off," or `sudo pmset -c sleep 0 disksleep 0 displaysleep 5`.
+- **Lid:** leave it open with the screen off. Closing the lid sleeps a MacBook. `sudo pmset -a disablesleep 1` keeps it awake closed (undo with `0`), but it runs hotter. Keep it on a hard surface.
+- **Battery:** leave Optimized Battery Charging on, or cap charging with [AlDente](https://apphousekitchen.com). A battery plugged in for years can swell, so check now and then that the trackpad and case aren't bulging.
+- **Restarts:** iMessage only runs while you're logged in, so turn on automatic login (System Settings → Users & Groups). That requires FileVault off, which leaves the disk readable if the laptop is stolen. Keep FileVault on if you'd rather log in by hand after updates.
 
 ## What to expect
 
@@ -83,6 +116,53 @@ On the iPhone you'll see a conversation with the dumbphone's number that holds e
 - **`@name` sends as iMessage.** For friends without iPhones, wait for them to text you and use `r`.
 - **Photos** arrive as `(sent an attachment)`. Check them on the iPhone later.
 - **Sending green-bubble texts through BlueBubbles** relies on Text Message Forwarding. It hasn't been tested across every macOS version yet. If replies to Android friends fail, please open an issue with your macOS version.
+
+## Transit directions
+
+`go home to union station` texts back something like:
+
+```
+Leave 2:10pm, arrive 2:41pm (31 min)
+Walk 5 min to Dupont Circle
+2:19pm Metro RED toward Glenmont. Off at Union Station 2:29pm
+Walk 2 min to union station
+```
+
+Routes come from [OpenTripPlanner](https://www.opentripplanner.org), an open-source trip planner you run yourself, using your transit agency's published schedules and live arrival times. Places are looked up with OpenStreetMap's free [Nominatim](https://nominatim.org) service, limited to your area by `viewbox`. Save the places you use often under `directions.places` so `home` and `work` just work.
+
+You need [Docker](https://docs.docker.com/get-docker/) and about 3 GB of free memory. If your old Mac can't run Docker, run OpenTripPlanner on another machine at home and point `otp_url` at it.
+
+**Washington, DC** has a script:
+
+1. Get a free API key at [developer.wmata.com](https://developer.wmata.com) (sign up, then subscribe to the Default Tier).
+2. Run `WMATA_API_KEY=yourkey scripts/setup-otp-dc.sh`. It downloads DC's street map and WMATA's bus and rail schedules, then builds the planner.
+3. Run the `docker run` command it prints, and add the `directions` section to `config.yaml`.
+4. Rerun the script weekly, for example from cron, so schedule changes are picked up.
+
+The DC street map covers the District only. For trips into Maryland or Virginia, add those states' maps from [Geofabrik](https://download.geofabrik.de/north-america/us.html) to the data folder and raise `OTP_MEMORY` to `8g` or more.
+
+**Other cities** work the same way. Put your area's OpenStreetMap extract (`.osm.pbf`) and your agency's GTFS schedules (a `.zip` with `gtfs` in the file name) in one folder, then build with the same `docker run ... --build --save` command the script uses. The [Mobility Database](https://mobilitydatabase.org) lists GTFS feeds for most agencies.
+
+## Typo fixing
+
+Keypads make typos easy. When a text doesn't match any command, openBrick can ask a small AI model running on your own machine what you meant. Nothing leaves your house, and the model only ever sees your own commands, never messages people send you.
+
+It runs a small Qwen model (Qwen2.5 3B Instruct, about 2 GB) on [llama.cpp](https://github.com/ggml-org/llama.cpp):
+
+1. Install llama.cpp with `brew install llama.cpp`.
+2. Add the `llm` section to `config.yaml`.
+3. Run `scripts/install-mac-services.sh`. It starts `llama-server` on port 8081 at login and downloads the model the first time.
+
+To use a different model, set `OPENBRICK_MODEL` to another Hugging Face GGUF before running the script, e.g. `OPENBRICK_MODEL=Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M` for a faster, less accurate one on an older Mac. Already use [Ollama](https://ollama.com)? Point `llm.url` at `http://127.0.0.1:11434` and set `model` to an Ollama model name.
+
+Safeguards:
+
+- **Your words are sent as typed.** The model only works out the command and who it's for. Message text always comes from what you typed, so `tell dad i love u` sends "i love u", and the model can't make up or reword a message.
+- **Sends wait for a yes.** Anything that would send a message after a correction waits for you to reply `y`.
+- **You can see what it searched.** Directions show the command openBrick understood, e.g. `(go home to National Park)`, so you can catch a wrong guess.
+- **Unclear texts get a plain reply.** If the model isn't sure, you get the normal "Unknown command" reply.
+
+On an Apple Silicon Mac a correction takes under a second. Older Intel Macs take several seconds, which is still fine for a text reply.
 
 ## No iPhone? Use Twilio instead
 
@@ -117,7 +197,6 @@ Since the Mac has to stay on anyway, running everything on it is simpler.
 ## Roadmap
 
 - **Calls from your main number.** `call mom` would have Twilio ring the dumbphone, then connect you to Mom showing your main number as caller ID. Twilio allows this once you verify you own the number.
-- **Directions.** `directions to 123 Main St` gets the steps back by text.
 - **Spotify.** `play radiohead` controls your Spotify Connect speakers at home.
 - **Rides (experimental).** `uber me from home to the airport` gets an estimate, then `YES` to book. Uber and Lyft have no public API for booking your own rides, so this would automate their website. It's fragile, against their terms, and could get your account flagged. Opt-in only.
 
@@ -130,7 +209,7 @@ Instagram is not on the roadmap.
 .venv/bin/pytest
 ```
 
-New commands go in `src/openbrick/router.py`. Keep replies short, since every reply is read on a 2-inch screen.
+New commands go in `src/openbrick/router.py`. If a command can be typo'd, also teach `src/openbrick/llm.py` about it. Keep replies short, since every reply is read on a 2-inch screen.
 
 ## License
 

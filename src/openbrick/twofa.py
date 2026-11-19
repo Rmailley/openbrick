@@ -1,3 +1,4 @@
+import difflib
 import hmac
 import time
 
@@ -35,12 +36,18 @@ class TwoFA:
         self._failures = 0
 
         if account is None:
-            return "2FA accounts: " + ", ".join(sorted(self._accounts))
+            return "2FA accounts: " + ", ".join(self.accounts())
 
-        secret = self._accounts.get(account.lower())
-        if secret is None:
-            return f"No 2FA account named {account}. Text 2fa PIN to list them."
+        name = account.lower()
+        if name not in self._accounts:
+            close = difflib.get_close_matches(name, self._accounts, n=1, cutoff=0.6)
+            if not close:
+                return f"No 2FA account named {account}. Text 2fa PIN to list them."
+            name = close[0]
 
-        totp = _TOTP(secret)
+        totp = _TOTP(self._accounts[name])
         remaining = totp.interval - int(now) % totp.interval
-        return f"{account.lower()}: {totp.at(int(now))} ({remaining}s left)"
+        return f"{name}: {totp.at(int(now))} ({remaining}s left)"
+
+    def accounts(self) -> list[str]:
+        return sorted(self._accounts)

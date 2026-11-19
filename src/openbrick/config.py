@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -27,6 +27,20 @@ class TwoFAConfig:
 
 
 @dataclass
+class DirectionsConfig:
+    otp_url: str = "http://127.0.0.1:8080"
+    geocoder_url: str = "https://nominatim.openstreetmap.org"
+    viewbox: str | None = None
+    places: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class LLMConfig:
+    url: str = "http://127.0.0.1:8081"
+    model: str = "qwen"
+
+
+@dataclass
 class Config:
     transport: str
     owner_number: str
@@ -36,6 +50,8 @@ class Config:
     twofa: TwoFAConfig | None
     contacts: dict[str, str]
     data_dir: Path
+    directions: DirectionsConfig | None = None
+    llm: LLMConfig | None = None
     host: str = "127.0.0.1"
     port: int = 8787
 
@@ -61,8 +77,15 @@ def load(path: str | Path) -> Config:
             accounts={k.lower(): str(v).replace(" ", "") for k, v in (tf.get("accounts") or {}).items()},
         )
 
+    directions = None
+    if (d := raw.get("directions")) is not None:
+        d = dict(d or {})
+        d["places"] = {k.lower(): str(v) for k, v in (d.get("places") or {}).items()}
+        directions = DirectionsConfig(**d)
+
     bb = raw.get("bluebubbles")
     tw = raw.get("twilio")
+    llm = raw.get("llm")
     return Config(
         transport=transport,
         owner_number=str(raw["owner_number"]),
@@ -72,6 +95,8 @@ def load(path: str | Path) -> Config:
         twofa=twofa,
         contacts={k.lower(): str(v) for k, v in (raw.get("contacts") or {}).items()},
         data_dir=Path(raw.get("data_dir", "./data")),
+        directions=directions,
+        llm=LLMConfig(**llm) if llm is not None else None,
         host=raw.get("host", "127.0.0.1"),
         port=int(raw.get("port", 8787)),
     )

@@ -26,6 +26,9 @@ class FakeIMessage:
     def send_text(self, chat_guid, text):
         self.sent.append((chat_guid, text))
 
+    def contacts(self):
+        return []
+
 
 def make_config(tmp_path: Path, transport: str) -> Config:
     return Config(
@@ -68,10 +71,21 @@ def test_relay_command_from_dumbphone_is_answered_in_its_chat(relay):
     webhook(client, OWNER, "@mom on my way", f"any;-;{OWNER}")
     assert im.sent == [
         (f"iMessage;-;{MOM}", "on my way"),
-        (f"any;-;{OWNER}", "Sent."),
+        (f"any;-;{OWNER}", "Sent to mom."),
     ]
     webhook(client, MOM, "ok!", f"iMessage;-;{MOM}")
     assert im.sent[-1] == (f"any;-;{OWNER}", "[mom] ok!")
+
+
+def test_relay_names_senders_from_the_address_book(tmp_path):
+    class WithContacts(FakeIMessage):
+        def contacts(self):
+            return [{"firstName": "Henry", "lastName": "Lee", "phoneNumbers": [{"address": "(202) 555-0103"}]}]
+
+    im = WithContacts()
+    client = create_app(make_config(tmp_path, "relay"), imessage=im).test_client()
+    webhook(client, "+12025550103", "running late?", "iMessage;-;+12025550103")
+    assert im.sent == [(f"SMS;-;{OWNER}", "[Henry] running late?")]
 
 
 def test_relay_reply_threads_to_last_sender(relay):
@@ -114,7 +128,7 @@ def post_sms(client, form, sign=True):
 def test_twilio_owner_command_gets_reply(twilio):
     client, _, im = twilio
     r = post_sms(client, {"From": OWNER, "Body": "@mom hi"})
-    assert "<Message>Sent.</Message>" in r.get_data(as_text=True)
+    assert "<Message>Sent to mom.</Message>" in r.get_data(as_text=True)
     assert im.sent == [(f"iMessage;-;{MOM}", "hi")]
 
 

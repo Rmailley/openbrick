@@ -3,7 +3,10 @@ import hmac
 from flask import Flask, Response, abort, request
 
 from .config import Config
+from .contacts import ContactBook
+from .directions import Directions, Geocoder, TripPlanner
 from .imessage import BlueBubbles, format_incoming, incoming_message, sender
+from .llm import Interpreter
 from .router import Router
 from .sms import RelaySMS, TwilioSMS
 from .state import State
@@ -26,7 +29,12 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
                 config.owner_number,
             )
     twofa = TwoFA(config.twofa.pin, config.twofa.accounts) if config.twofa else None
-    router = Router(config.contacts, state, imessage=imessage, twofa=twofa)
+    directions = None
+    if d := config.directions:
+        directions = Directions(Geocoder(d.geocoder_url, d.viewbox), TripPlanner(d.otp_url), d.places)
+    interpreter = Interpreter(config.llm.url, config.llm.model) if config.llm else None
+    book = ContactBook(config.contacts, fetch=imessage.contacts if imessage else None)
+    router = Router(book, state, imessage=imessage, twofa=twofa, directions=directions, interpreter=interpreter)
 
     app = Flask(__name__)
 
@@ -50,7 +58,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
                         sms.send(reply)
                 return "", 204
 
-            if result := format_incoming(msg, config.contacts):
+            if result := format_incoming(msg, book.label):
                 chat_guid, text = result
                 state.set("last_chat", chat_guid)
                 sms.send(text)

@@ -18,7 +18,8 @@ bluebubbles:
   #   http://<this server>:8787/bluebubbles?token=<webhook_token>
   webhook_token: "change-me-to-a-long-random-string"
 
-# Names you can use with @name. Phone numbers in +1 format, or Apple ID emails.
+# Your contacts sync from the Mac's Contacts app (which syncs from your iPhone), so @henry just works.
+# Optional extra short names go here. They win over the address book. Phone numbers or Apple ID emails.
 contacts:
   mom: "+15550001111"
   sam: "sam@icloud.com"
@@ -28,6 +29,23 @@ twofa:
   pin: "0421"                   # keep the quotes
   accounts:
     github: "JBSWY3DPEHPK3PXP"  # the setup key shown under the QR code
+
+# Optional. Transit directions from your own OpenTripPlanner (see scripts/setup-otp-dc.sh).
+directions:
+  otp_url: "http://127.0.0.1:8080"
+  geocoder_url: "https://nominatim.openstreetmap.org"
+  viewbox: "-77.6,39.2,-76.6,38.6"   # only look up places in the DC area (lon,lat,lon,lat)
+  places:                            # names you can use in "go home to work"
+    home: "1600 Pennsylvania Ave NW, Washington, DC"
+    work: "38.8977,-77.0365"         # an address or lat,lon
+
+# Optional. A small model on your own machine that fixes typo'd commands. Only used when a text
+# doesn't parse, and anything it turns into a message asks you to confirm first.
+# Defaults to llama.cpp's llama-server on port 8081 (scripts/install-mac-services.sh starts it).
+# For Ollama instead: url "http://127.0.0.1:11434", model "qwen2.5:3b".
+llm:
+  url: "http://127.0.0.1:8081"
+  model: "qwen"
 
 data_dir: "./data"
 

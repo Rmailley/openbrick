@@ -38,7 +38,21 @@ def test_bad_configs_explain_themselves(tmp_path, body, error):
         load(write(tmp_path, body))
 
 
+def test_optional_sections_default_off(tmp_path):
+    c = load(write(tmp_path, BB))
+    assert c.directions is None and c.llm is None
+
+
+def test_directions_defaults_and_lowercased_places(tmp_path):
+    c = load(write(tmp_path, BB + "directions: {places: {Home: '38.9,-77.0'}}\nllm: {}\n"))
+    assert c.directions.otp_url == "http://127.0.0.1:8080"
+    assert c.directions.places == {"home": "38.9,-77.0"}
+    assert c.llm.url == "http://127.0.0.1:8081"
+
+
 def test_example_config_loads():
     c = load(Path(__file__).parent.parent / "config.example.yaml")
     assert c.transport == "relay"
     assert c.twofa.pin == "0421"
+    assert "home" in c.directions.places
+    assert c.llm.model

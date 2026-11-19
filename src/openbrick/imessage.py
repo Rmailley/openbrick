@@ -23,6 +23,11 @@ class BlueBubbles:
         )
         r.raise_for_status()
 
+    def contacts(self) -> list[dict]:
+        r = self.session.get(f"{self.url}/api/v1/contact", params={"password": self.password}, timeout=30)
+        r.raise_for_status()
+        return r.json()["data"]
+
 
 def direct_chat_guid(address: str) -> str:
     return f"iMessage;-;{address}"
@@ -42,12 +47,10 @@ def sender(msg: dict) -> str:
     return (msg.get("handle") or {}).get("address", "unknown")
 
 
-def format_incoming(msg: dict, contacts: dict[str, str]) -> tuple[str, str] | None:
+def format_incoming(msg: dict, label_for) -> tuple[str, str] | None:
     """Turn an incoming message into (chat_guid, sms_text), or None if there's nothing to forward."""
     chat = msg["chats"][0]
-    address = sender(msg)
-    names = {addr: name for name, addr in contacts.items()}
-    label = names.get(address, address)
+    label = label_for(sender(msg))
     if ";+;" in chat["guid"]:
         label = f"{label} in {chat.get('displayName') or 'group'}"
 

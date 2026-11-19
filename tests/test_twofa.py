@@ -20,6 +20,11 @@ def test_unknown_account():
     assert "No 2FA account named bank" in tf.handle("0421", "bank")
 
 
+def test_misspelled_account_still_works():
+    tf = TwoFA("0421", {"github": SECRET, "aws": SECRET})
+    assert tf.handle("0421", "gihub").startswith("github: ")
+
+
 def test_locks_after_repeated_wrong_pins():
     now = [1_800_000_000.0]
     tf = TwoFA("0421", {"github": SECRET}, clock=lambda: now[0])
