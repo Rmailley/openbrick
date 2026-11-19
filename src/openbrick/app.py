@@ -1,16 +1,19 @@
 import hmac
+import logging
 
 from flask import Flask, Response, abort, request
 
 from .config import Config
 from .contacts import ContactBook
 from .directions import Directions, Geocoder, TripPlanner
-from .imessage import BlueBubbles, format_incoming, incoming_message, sender
+from .imessage import BlueBubbles, describe, format_incoming, incoming_message, sender
 from .llm import Interpreter
 from .router import Router
 from .sms import RelaySMS, TwilioSMS
 from .state import State
 from .twofa import TwoFA
+
+log = logging.getLogger("openbrick.app")
 
 
 def create_app(config: Config, sms=None, imessage=None) -> Flask:
@@ -38,12 +41,22 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
 
     app = Flask(__name__)
 
+    def _deliver(text: str, what: str) -> bool:
+        # A 500 would make BlueBubbles retry the webhook, which duplicates messages once sending recovers.
+        try:
+            sms.send(text)
+            return True
+        except Exception as e:
+            log.error("%s failed: %s", what, describe(e))
+            return False
+
     if config.bluebubbles:
         token = config.bluebubbles.webhook_token
 
         @app.post("/bluebubbles")
         def bluebubbles_webhook():
             if not hmac.compare_digest(request.args.get("token", ""), token):
+                log.warning("webhook rejected: bad token")
                 abort(403)
             msg = incoming_message(request.get_json(silent=True) or {})
             if msg is None:
@@ -53,15 +66,18 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
                 # The dumbphone texting your main number is a command. Over Twilio, commands arrive at /sms instead.
                 if config.transport == "relay":
                     state.set("owner_chat", msg["chats"][0]["guid"])
+                    log.info("command from owner")
                     reply = router.handle(msg.get("text") or "")
                     if reply:
-                        sms.send(reply)
+                        if _deliver(reply, "reply to owner"):
+                            log.info("replied to owner")
                 return "", 204
 
             if result := format_incoming(msg, book.label):
                 chat_guid, text = result
                 state.set("last_chat", chat_guid)
-                sms.send(text)
+                if _deliver(text, f"forward from {book.label(sender(msg))}"):
+                    log.info("forwarded message from %s", book.label(sender(msg)))
             return "", 204
 
     if config.transport == "twilio":
@@ -79,9 +95,11 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
 
             resp = MessagingResponse()
             if request.form.get("From") == config.owner_number:
+                log.info("command from owner")
                 reply = router.handle(request.form.get("Body", ""))
                 if reply:
                     resp.message(reply)
+                    log.info("replied to owner")
             return Response(str(resp), mimetype="application/xml")
 
     return app

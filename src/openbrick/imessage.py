@@ -29,6 +29,14 @@ class BlueBubbles:
         return r.json()["data"]
 
 
+def describe(error: Exception) -> str:
+    """An error as safe log text. requests puts the full URL, with the BlueBubbles password, in its messages."""
+    response = getattr(error, "response", None)
+    if response is not None:
+        return f"{type(error).__name__} (HTTP {response.status_code})"
+    return type(error).__name__
+
+
 def direct_chat_guid(address: str) -> str:
     return f"iMessage;-;{address}"
 

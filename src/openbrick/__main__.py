@@ -1,3 +1,4 @@
+import logging
 import sys
 
 from waitress import serve
@@ -8,6 +9,7 @@ from .config import load
 
 def main() -> None:
     path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     config = load(path)
     print(f"openBrick listening on http://{config.host}:{config.port}")
     serve(create_app(config), host=config.host, port=config.port)

@@ -14,13 +14,16 @@ ADDRESS_BOOK = [
 
 
 class FakeIMessage:
-    def __init__(self, fail=False):
+    def __init__(self, fail=False, reject=()):
         self.sent = []
         self.fail = fail
+        self.reject = reject
 
     def send_text(self, chat_guid, text):
         if self.fail:
             raise requests.ConnectionError("mac is off")
+        if chat_guid in self.reject:
+            raise requests.HTTPError("500 Message Send Error")
         self.sent.append((chat_guid, text))
 
 
@@ -216,3 +219,54 @@ def test_llm_down_or_unsure_falls_back_to_plain_error(tmp_path):
     assert router.handle("instagrm").startswith("Unknown command")
     router, _ = make(tmp_path, interpreter=FakeInterpreter(None))
     assert router.handle("whats the weather").startswith("Unknown command")
+
+
+DAD_BOOK = [
+    {
+        "firstName": "Dad",
+        "phoneNumbers": [{"address": "(202) 555-0201"}, {"address": "(202) 555-0202"}],
+        "emails": [{"address": "dad@aol.com"}],
+    }
+]
+
+
+def test_tries_next_address_when_messages_rejects_one(tmp_path):
+    im = FakeIMessage(reject={"iMessage;-;+12025550201"})
+    book = ContactBook({}, fetch=lambda: DAD_BOOK)
+    router = Router(book, State(tmp_path / "s.json"), imessage=im)
+    assert router.handle("to dad amazing") == "Sent to Dad."
+    assert im.sent == [("iMessage;-;+12025550202", "amazing")]
+
+
+def test_reports_when_every_address_is_rejected(tmp_path):
+    im = FakeIMessage(reject={"iMessage;-;+12025550201", "iMessage;-;+12025550202", "iMessage;-;dad@aol.com"})
+    book = ContactBook({}, fetch=lambda: DAD_BOOK)
+    router = Router(book, State(tmp_path / "s.json"), imessage=im)
+    assert router.handle("to dad amazing") == "Couldn't send to Dad: Messages rejected 3 address(es)."
+
+
+def test_unreachable_mac_does_not_retry_other_addresses(tmp_path):
+    im = FakeIMessage(fail=True)
+    book = ContactBook({}, fetch=lambda: DAD_BOOK)
+    router = Router(book, State(tmp_path / "s.json"), imessage=im)
+    assert router.handle("to dad amazing") == "Couldn't reach the Mac. Message not sent."
+
+
+def test_remembers_the_address_that_worked(tmp_path):
+    im = FakeIMessage(reject={"iMessage;-;+12025550201"})
+    book = ContactBook({}, fetch=lambda: DAD_BOOK)
+    state = State(tmp_path / "s.json")
+    router = Router(book, state, imessage=im)
+    router.handle("to dad one")
+    attempts = []
+    original = im.send_text
+
+    def spy(chat_guid, text):
+        attempts.append(chat_guid)
+        return original(chat_guid, text)
+
+    im.send_text = spy
+    # A new Router reads the saved choice back from disk, as after a restart.
+    router = Router(book, State(tmp_path / "s.json"), imessage=im)
+    assert router.handle("to dad two") == "Sent to Dad."
+    assert attempts == ["iMessage;-;+12025550202"]

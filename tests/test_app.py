@@ -146,3 +146,12 @@ def test_twilio_forwards_imessages_and_ignores_owner_texts_to_mac(twilio):
     assert sms.sent == ["[mom] dinner?"]
     post_sms(client, {"From": OWNER, "Body": "r yes"})
     assert im.sent == [(f"iMessage;-;{MOM}", "yes")]
+
+
+def test_failed_forward_still_returns_204_so_bluebubbles_does_not_retry(tmp_path):
+    class BrokenIMessage(FakeIMessage):
+        def send_text(self, chat_guid, text):
+            raise RuntimeError("Messages is hung")
+
+    app = create_app(make_config(tmp_path, "relay"), imessage=BrokenIMessage())
+    assert webhook(app.test_client(), MOM, "hi", "iMessage;-;" + MOM).status_code == 204
