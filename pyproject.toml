@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "openbrick"
+version = "0.1.0"
+description = "Leave your iPhone at home and carry a dumbphone: your messages, relayed by text."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "flask>=3.0",
+  "pyotp>=2.9",
+  "pyyaml>=6.0",
+  "requests>=2.31",
+  "waitress>=3.0",
+]
+
+[project.optional-dependencies]
+twilio = ["twilio>=9.0"]
+dev = ["pytest>=8.0", "twilio>=9.0"]
+
+[project.scripts]
+openbrick = "openbrick.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

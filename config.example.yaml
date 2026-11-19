@@ -1,0 +1,39 @@
+# Copy to config.yaml and fill in. config.yaml holds secrets: never commit it.
+
+# relay  = your iPhone stays home and relays texts to the dumbphone from your own number (free).
+# twilio = no iPhone; you text commands to a Twilio number instead (about $1/month plus per-text fees).
+transport: relay
+
+# The dumbphone's number (its own SIM and plan). Write it the way BlueBubbles shows it, e.g. +15551234567.
+owner_number: "+15551234567"
+
+host: "127.0.0.1"
+port: 8787
+
+# BlueBubbles Server on your Mac, signed in to the same Apple ID as your iPhone.
+bluebubbles:
+  url: "http://127.0.0.1:1234"
+  password: "your-bluebubbles-server-password"
+  # Long random string. Put it in the BlueBubbles webhook URL:
+  #   http://<this server>:8787/bluebubbles?token=<webhook_token>
+  webhook_token: "change-me-to-a-long-random-string"
+
+# Names you can use with @name. Phone numbers in +1 format, or Apple ID emails.
+contacts:
+  mom: "+15550001111"
+  sam: "sam@icloud.com"
+
+# Optional. Codes are sent over plain SMS, so keep bank and email accounts off this list.
+twofa:
+  pin: "0421"                   # keep the quotes
+  accounts:
+    github: "JBSWY3DPEHPK3PXP"  # the setup key shown under the QR code
+
+data_dir: "./data"
+
+# Only for transport: twilio.
+# public_url: "https://openbrick.example.com"
+# twilio:
+#   account_sid: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#   auth_token: "your-twilio-auth-token"
+#   number: "+15557654321"
