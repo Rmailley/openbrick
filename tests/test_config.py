@@ -86,3 +86,14 @@ def test_load_env_reads_keys_without_overriding_the_environment(tmp_path, monkey
     assert os.environ["OB_SET"] == "from-shell"
     assert "OB_EMPTY" not in os.environ
     monkeypatch.delenv("OB_NEW")
+
+
+def test_twilio_credentials_for_calls_can_come_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACenv")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tokenenv")
+    c = load(write(tmp_path, BB + "calls: {caller_id: '+15559990000'}\n"))
+    assert (c.calls.account_sid, c.calls.auth_token) == ("ACenv", "tokenenv")
+
+    monkeypatch.delenv("TWILIO_AUTH_TOKEN")
+    with pytest.raises(ValueError, match="TWILIO_AUTH_TOKEN"):
+        load(write(tmp_path, BB + "calls: {caller_id: '+15559990000'}\n"))

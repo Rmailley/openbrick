@@ -73,6 +73,18 @@ class Config:
     port: int = 8787
 
 
+def _calls(raw: dict) -> CallsConfig:
+    """The calls section, with the Twilio credentials allowed to come from .env instead of config.yaml."""
+    sid = raw.get("account_sid") or os.environ.get("TWILIO_ACCOUNT_SID")
+    token = raw.get("auth_token") or os.environ.get("TWILIO_AUTH_TOKEN")
+    if not (sid and token and raw.get("caller_id")):
+        raise ValueError(
+            "calls needs caller_id in config.yaml, plus account_sid and auth_token there or "
+            "TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env"
+        )
+    return CallsConfig(account_sid=str(sid), auth_token=str(token), caller_id=str(raw["caller_id"]))
+
+
 def load_env(path: str | Path) -> None:
     """Put KEY=value lines from a .env file into the environment, without overriding what's already set.
 
@@ -135,7 +147,7 @@ def load(path: str | Path) -> Config:
         directions=directions,
         llm=LLMConfig(**llm) if llm is not None else None,
         anthropic=AnthropicConfig(**claude) if claude is not None else None,
-        calls=CallsConfig(**calls) if calls else None,
+        calls=_calls(calls) if calls else None,
         host=raw.get("host", "127.0.0.1"),
         port=int(raw.get("port", 8787)),
     )

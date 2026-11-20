@@ -197,10 +197,10 @@ To use a different model, set `OPENBRICK_MODEL` to another Hugging Face GGUF bef
 ```
 
 1. Create a [Twilio](https://www.twilio.com) account and add your main number under **Verified Caller IDs** (Twilio phones it with a code). You don't need to buy a Twilio number.
-2. Add a `calls` section to `config.yaml` with your account SID, auth token and the verified `caller_id`.
+2. Put `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` in `.env`, and add a `calls:` section to `config.yaml` with the verified `caller_id` (the credentials can also go in the section as `account_sid` and `auth_token`).
 3. Text `call mom` from the dumbphone. A name that needed correcting asks `y` first, and two matching names ask which. Raw numbers work too: `call 2025550123`.
 
-You pay Twilio for both legs of each call, per minute. This path hasn't been tested against a live Twilio account yet; if a call fails, the log shows the error type and you get `Couldn't place the call.`
+You pay Twilio for both legs of each call, per minute. A trial account can only call numbers you've verified and plays a notice first, so upgrade the account before relying on it. This path hasn't been tested against a live Twilio account yet; if a call fails, the log shows the error type and you get `Couldn't place the call.`
 
 ## No iPhone? Use Twilio instead
 

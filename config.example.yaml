@@ -53,9 +53,9 @@ anthropic:
 # Optional. `call mom` rings the dumbphone from your main number, then connects you to Mom showing it too.
 # Needs a Twilio account with your main number added under Verified Caller IDs, and `pip install -e '.[twilio]'`.
 # calls:
-#   account_sid: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-#   auth_token: "your-twilio-auth-token"
 #   caller_id: "+15551234567"   # your main number, as verified in Twilio
+#   # The Twilio credentials can go here as account_sid / auth_token, or (better) in .env as
+#   # TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.
 
 # Optional. Alternatively, a small model on your own machine (used only if there's no anthropic section) for typos the built-in spellchecker can't fix (which
 # needs no setup). Only used when a text doesn't parse and the spellchecker has no answer, and anything it turns into a message asks you to confirm first.
