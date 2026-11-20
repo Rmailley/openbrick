@@ -13,6 +13,7 @@ log = logging.getLogger("openbrick.router")
 HELP = (
     "openBrick: r msg = reply to last. "
     "@name msg = iMessage someone. "
+    "contact name = look up a number. "
     "call name = call from your main number. "
     "mute / unmute = silence the last group for 1 hr, then a summary. "
     "go A to B = transit directions. "
@@ -27,6 +28,7 @@ RAW_ADDRESS = re.compile(r"^(\+\d{7,15}|\S+@\S+\.\S+)\s+(.+)$", re.DOTALL)
 REPLY = re.compile(r"^r\s+(.+)$", re.IGNORECASE | re.DOTALL)
 GO = re.compile(r"^(?:go|dir|directions)\s+(?:from\s+)?(.+?)\s+to\s+(.+)$", re.IGNORECASE | re.DOTALL)
 GO_NO_ORIGIN = re.compile(r"^(?:go|dir|directions)\s+to\s+(.+)$", re.IGNORECASE | re.DOTALL)
+CONTACT = re.compile(r"^contact\s+(\S.*)$", re.IGNORECASE | re.DOTALL)
 CALL = re.compile(r"^call\s+(\S.*)$", re.IGNORECASE | re.DOTALL)
 RAW_NUMBER = re.compile(r"^\+?[\d\s().-]{10,}$")
 TWOFA = re.compile(r"^2fa(?:\s+(\S+))?(?:\s+(\S+))?$", re.IGNORECASE)
@@ -130,6 +132,8 @@ class Router:
             return self._mute()
         if text.lower() == "unmute":
             return self._unmute()
+        if m := CONTACT.match(text):
+            return self._contact(m[1])
         if m := CALL.match(text):
             return self._call(m[1])
         if m := SEND.match(text):
@@ -168,6 +172,21 @@ class Router:
         if self.mutes is None:
             return "Muting isn't set up."
         return self.mutes.release_all() or "Nothing is muted."
+
+    def _contact(self, text: str) -> str:
+        """Say who a name resolves to and which numbers they have, without sending anything."""
+        match = self.book.match(text)
+        name = text.strip()
+        if not match.contacts:
+            raise Unresolved(f"No contact named {name}.")
+        if len(match.contacts) > MAX_CHOICES:
+            return f"{len(match.contacts)} matches for {name}. Use their full name."
+        lines = []
+        for label, c in _labeled(match.contacts):
+            shown = [_pretty(a) for a in c.addresses[:3]]
+            more = f" +{len(c.addresses) - 3} more" if len(c.addresses) > 3 else ""
+            lines.append(f"{label}: {', '.join(shown)}{more}")
+        return ("" if match.exact else "Closest match:\n") + "\n".join(lines)
 
     def _call(self, text: str) -> str:
         if self.caller is None:
@@ -287,6 +306,13 @@ class Router:
 
 
 _REJECTED = object()
+
+
+def _pretty(address: str) -> str:
+    """+12025550103 as 202-555-0103; emails and other formats as they are."""
+    if address.startswith("+1") and len(address) == 12 and address[1:].isdigit():
+        return f"{address[2:5]}-{address[5:8]}-{address[8:]}"
+    return address
 
 
 def _addresses(item: dict) -> list[str]:

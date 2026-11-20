@@ -24,6 +24,7 @@ def _every_minute(app) -> None:
 def main() -> None:
     path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("twilio.http_client").setLevel(logging.WARNING)  # it logs every request, account SID included
     load_env(Path(path).resolve().parent / ".env")  # next to config.yaml
     config = load(path)
     app = create_app(config)

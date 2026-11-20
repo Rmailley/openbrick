@@ -12,6 +12,7 @@ CONNECTORS = {"to", "2", "too"}
 # is usually a different word ("did" is not "dir").
 VERBS = {
     "reply": "reply",
+    "contact": "contact",  # read-only, so a wrong guess is harmless
     "help": "help",
     "directions": "go",
     "direction": "go",
@@ -98,6 +99,8 @@ class Spellchecker:
             return None
         if action == "reply":
             return f"r {rest}"
+        if action == "contact":
+            return f"contact {rest}"
         if action == "msg":
             return f"@{rest}"
         return self._directions(rest, known.get("places", []))

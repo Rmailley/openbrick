@@ -38,6 +38,7 @@ You control it by texting **your own main number** from the dumbphone:
 | `r sounds good` | Replies to whoever messaged you last, from your main number. Works for group chats and green-bubble friends. |
 | `@henry on my way` or `to henry on my way` | Sends an iMessage to someone in your contacts. First name, full name, last name or nickname all work. |
 | `@+15550001111 hi` / `@sam@icloud.com hi` | Sends an iMessage to a number or Apple ID |
+| `contact henry` | Looks up who Henry is and which numbers he has, without sending anything. Handy for checking that a contact synced. |
 | `call mom` | Rings the dumbphone from your main number, then connects you to Mom, who sees your main number ([setup](#calls)) |
 | `mute` | Holds the group chat you last heard from for an hour. Its messages stop arriving. |
 | `unmute` | Ends the mute and texts back a summary of what you missed. A mute that runs out sends the summary by itself. |

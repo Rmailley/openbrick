@@ -327,3 +327,24 @@ def test_spellchecker_never_turns_a_typo_into_a_mute(tmp_path):
     router.state.set("last_chat", "iMessage;+;chat1")
     assert router.handle("cute").startswith("Unknown command")
     assert mutes.muted == {}
+
+
+def test_contact_lookup_shows_numbers_without_sending_anything(tmp_path):
+    book = [
+        {
+            "firstName": "Dad",
+            "phoneNumbers": [{"address": "(202) 555-0201"}, {"address": "+44 20 7946 0958"}, {"address": "202 555 0203"}],
+            "emails": [{"address": "dad@aol.com"}],
+        },
+        {"firstName": "Email", "lastName": "Only", "emails": [{"address": "eo@icloud.com"}]},
+    ] + ADDRESS_BOOK
+    im = FakeIMessage()
+    router = Router(ContactBook({"mom": MOM}, fetch=lambda: book), State(tmp_path / "s.json"), imessage=im)
+    assert router.handle("contact henry") == "Henry Lee: 202-555-0103"
+    assert router.handle("contact dad") == "Dad: 202-555-0201, +442079460958, 202-555-0203 +1 more"
+    assert router.handle("Contact mom") == "mom: 555-000-1111"
+    assert router.handle("contact email only") == "Email Only: eo@icloud.com"
+    assert router.handle("contact mike") == "Mike Chen: 202-555-0101\nMike Ross: 202-555-0102"
+    assert router.handle("contact henny") == "Closest match:\nHenry Lee: 202-555-0103"
+    assert router.handle("contact nobody") == "No contact named nobody."
+    assert im.sent == []

@@ -72,3 +72,7 @@ def test_fallback_uses_first_answer_and_skips_the_model_when_it_can():
     chain = Fallback(Spellchecker(), Model())
     assert chain.interpret("hepl", KNOWN) == "help" and Model.calls == 0
     assert chain.interpret("is it raining", KNOWN) == "help" and Model.calls == 1
+
+
+def test_contact_lookup_typos_are_fixed_because_theyre_read_only():
+    assert Spellchecker().interpret("contct henry", KNOWN) == "contact henry"
