@@ -39,7 +39,25 @@ directions:
     home: "1600 Pennsylvania Ave NW, Washington, DC"
     work: "38.8977,-77.0365"         # an address or lat,lon
 
-# Optional. A small model on your own machine for typos the built-in spellchecker can't fix (which
+# Optional. Claude, through your own Anthropic account (an API key from console.anthropic.com, billed
+# separately from a Claude subscription). Fixes typo'd commands the built-in spellchecker can't, and
+# summarizes group chats you mute. Prefer the ANTHROPIC_API_KEY environment variable over writing the key
+# here; for the launchd service, put it in the agent's EnvironmentVariables or keep it in this file
+# (chmod 600). Commands with a PIN-like run of digits are never sent. With summaries on, the messages from a
+# muted group chat are sent to Anthropic to be summarized; set summaries: false to keep them on this Mac.
+anthropic:
+  # api_key: "sk-ant-..."
+  model: "claude-opus-5-5"    # claude-haiku-5-5 is cheaper and faster for this
+  summaries: true
+
+# Optional. `call mom` rings the dumbphone from your main number, then connects you to Mom showing it too.
+# Needs a Twilio account with your main number added under Verified Caller IDs, and `pip install -e '.[twilio]'`.
+# calls:
+#   account_sid: "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#   auth_token: "your-twilio-auth-token"
+#   caller_id: "+15551234567"   # your main number, as verified in Twilio
+
+# Optional. Alternatively, a small model on your own machine (used only if there's no anthropic section) for typos the built-in spellchecker can't fix (which
 # needs no setup). Only used when a text doesn't parse and the spellchecker has no answer, and anything it turns into a message asks you to confirm first.
 # Defaults to llama.cpp's llama-server on port 8081 (scripts/install-mac-services.sh starts it).
 # For Ollama instead: url "http://127.0.0.1:11434", model "qwen2.5:3b".

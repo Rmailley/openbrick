@@ -3,7 +3,7 @@ import re
 
 import requests
 
-from .contacts import Contact, ContactBook
+from .contacts import Contact, ContactBook, normalize_address
 from .directions import PlaceNotFound
 from .imessage import describe, direct_chat_guid
 from .state import State
@@ -13,6 +13,8 @@ log = logging.getLogger("openbrick.router")
 HELP = (
     "openBrick: r msg = reply to last. "
     "@name msg = iMessage someone. "
+    "call name = call from your main number. "
+    "mute / unmute = silence the last group for 1 hr, then a summary. "
     "go A to B = transit directions. "
     "2fa PIN acct = get a code. "
     "help = this list."
@@ -25,6 +27,8 @@ RAW_ADDRESS = re.compile(r"^(\+\d{7,15}|\S+@\S+\.\S+)\s+(.+)$", re.DOTALL)
 REPLY = re.compile(r"^r\s+(.+)$", re.IGNORECASE | re.DOTALL)
 GO = re.compile(r"^(?:go|dir|directions)\s+(?:from\s+)?(.+?)\s+to\s+(.+)$", re.IGNORECASE | re.DOTALL)
 GO_NO_ORIGIN = re.compile(r"^(?:go|dir|directions)\s+to\s+(.+)$", re.IGNORECASE | re.DOTALL)
+CALL = re.compile(r"^call\s+(\S.*)$", re.IGNORECASE | re.DOTALL)
+RAW_NUMBER = re.compile(r"^\+?[\d\s().-]{10,}$")
 TWOFA = re.compile(r"^2fa(?:\s+(\S+))?(?:\s+(\S+))?$", re.IGNORECASE)
 
 
@@ -41,6 +45,8 @@ class Router:
         twofa=None,
         directions=None,
         interpreter=None,
+        caller=None,
+        mutes=None,
     ):
         self.book = book
         self.state = state
@@ -48,6 +54,8 @@ class Router:
         self.twofa = twofa
         self.directions = directions
         self.interpreter = interpreter
+        self.caller = caller
+        self.mutes = mutes
 
     def handle(self, body: str) -> str | None:
         text = body.strip()
@@ -90,6 +98,11 @@ class Router:
             return self._send_contact(_addresses(option), pending["message"], option["name"])
         if kind == "send" and answer in ("y", "yes"):
             return self._send_contact(_addresses(pending), pending["message"], pending["name"])
+        if kind == "call_choose" and answer.isdigit() and 1 <= int(answer) <= len(pending["options"]):
+            option = pending["options"][int(answer) - 1]
+            return self._place_call(option["number"], option["name"])
+        if kind == "call" and answer in ("y", "yes"):
+            return self._place_call(pending["number"], pending["name"])
         if kind == "command" and answer in ("y", "yes"):
             return self._explain(lambda: self._run(pending["command"]))
         if answer in ("n", "no"):
@@ -113,6 +126,12 @@ class Router:
     def _run(self, text: str) -> str:
         if text.lower() in ("help", "?"):
             return HELP
+        if text.lower() == "mute":
+            return self._mute()
+        if text.lower() == "unmute":
+            return self._unmute()
+        if m := CALL.match(text):
+            return self._call(m[1])
         if m := SEND.match(text):
             return self._send_to(m[1])
         if m := REPLY.match(text):
@@ -132,6 +151,64 @@ class Router:
             return self.twofa.handle(m[1], m[2])
         log.info("unrecognized command")
         raise Unresolved(UNKNOWN)
+
+    def _mute(self) -> str:
+        last = self.state.get("last_chat")
+        if self.mutes is None:
+            return "Muting isn't set up."
+        if not last:
+            return "No chat to mute yet."
+        if ";+;" not in last:
+            return "Your last chat isn't a group. Only group chats can be muted."
+        name = (self.state.get("chat_names") or {}).get(last, "that group")
+        self.mutes.mute(last, name)
+        return f"Muted {name} for 1 hr. Text unmute for a summary."
+
+    def _unmute(self) -> str:
+        if self.mutes is None:
+            return "Muting isn't set up."
+        return self.mutes.release_all() or "Nothing is muted."
+
+    def _call(self, text: str) -> str:
+        if self.caller is None:
+            return "Calls aren't set up. Add a calls section to config.yaml."
+        if RAW_NUMBER.match(text):
+            number = normalize_address(text)
+            if not number.startswith("+"):
+                raise Unresolved("Use a full number with area code, like call 2025550123.")
+            return self._place_call(number, number)
+
+        match = self.book.match(text)
+        name = text.split()[0]
+        # Calls need a phone number; a contact with only an email can't be dialed.
+        callable_ = [(c, next((a for a in c.addresses if a.startswith("+")), None)) for c in match.contacts]
+        callable_ = [(c, n) for c, n in callable_ if n]
+        if not match.contacts:
+            raise Unresolved(f"No contact named {name}.")
+        if not callable_:
+            raise Unresolved(f"{match.contacts[0].name} has no phone number saved.")
+        if len(callable_) > MAX_CHOICES:
+            return f"Too many matches for {name}. Use their full name."
+        if len(callable_) > 1:
+            labels = [label for label, _ in _labeled([c for c, _ in callable_])]
+            options = [{"name": label, "number": n} for label, (_, n) in zip(labels, callable_)]
+            self.state.set("pending", {"kind": "call_choose", "options": options})
+            lines = [f"{i} {o['name']}" for i, o in enumerate(options, 1)]
+            return f"Call which {name}?\n" + "\n".join(lines) + "\nReply a number."
+        contact, number = callable_[0]
+        if not match.exact:
+            self.state.set("pending", {"kind": "call", "name": contact.name, "number": number})
+            return f"Call {contact.name}? Reply y to call."
+        return self._place_call(number, contact.name)
+
+    def _place_call(self, number: str, name: str) -> str:
+        try:
+            self.caller.call(number, name)
+        except Exception as e:  # Twilio raises its own error types; don't let any of them crash the webhook
+            log.error("call failed: %s", type(e).__name__)
+            return "Couldn't place the call."
+        log.info("calling %s", name)
+        return f"Calling you now. Answer to reach {name}."
 
     def _send_to(self, text: str, confirm: bool = False) -> str:
         if m := RAW_ADDRESS.match(text):

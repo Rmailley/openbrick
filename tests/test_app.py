@@ -155,3 +155,56 @@ def test_failed_forward_still_returns_204_so_bluebubbles_does_not_retry(tmp_path
 
     app = create_app(make_config(tmp_path, "relay"), imessage=BrokenIMessage())
     assert webhook(app.test_client(), MOM, "hi", "iMessage;-;" + MOM).status_code == 204
+
+
+GROUP = "iMessage;+;chat9"
+
+
+def group_message(client, sender, text):
+    payload = {
+        "type": "new-message",
+        "data": {
+            "isFromMe": False,
+            "text": text,
+            "handle": {"address": sender},
+            "chats": [{"guid": GROUP, "displayName": "Family"}],
+        },
+    }
+    return client.post("/bluebubbles?token=hook-secret", json=payload)
+
+
+def sent_texts(im):
+    return [text for _, text in im.sent]
+
+
+def test_mute_holds_a_groups_messages_until_unmute_summarizes_them(relay):
+    client, im = relay
+    group_message(client, MOM, "dinner sunday?")
+    assert sent_texts(im) == ["[mom in Family] dinner sunday?"]
+
+    webhook(client, OWNER, "mute", "SMS;-;" + OWNER)
+    assert sent_texts(im)[-1] == "Muted Family for 1 hr. Text unmute for a summary."
+
+    group_message(client, MOM, "i'll bring dessert")
+    group_message(client, MOM, "anyone?")
+    assert len(im.sent) == 2  # nothing forwarded while muted
+
+    webhook(client, OWNER, "unmute", "SMS;-;" + OWNER)
+    assert sent_texts(im)[-1] == "Unmuted Family. 2 missed: 2 from mom. Latest: mom: i'll bring dessert | mom: anyone?"
+    group_message(client, MOM, "back")
+    assert sent_texts(im)[-1] == "[mom in Family] back"
+
+
+def test_muting_a_group_doesnt_affect_one_on_one_chats(relay):
+    client, im = relay
+    group_message(client, MOM, "hi")
+    webhook(client, OWNER, "mute", "SMS;-;" + OWNER)
+    webhook(client, MOM, "call me", "iMessage;-;" + MOM)
+    assert sent_texts(im)[-1] == "[mom] call me"
+
+
+def test_sweep_does_nothing_without_expired_mutes(tmp_path):
+    im = FakeIMessage()
+    app = create_app(make_config(tmp_path, "relay"), imessage=im)
+    app.config["sweep"]()
+    assert im.sent == []

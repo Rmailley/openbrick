@@ -285,3 +285,45 @@ def test_spellchecker_fixes_typos_through_the_router_without_a_model(tmp_path):
     assert im.sent == [("SMS;-;+15550001111", "see u soon")]
     assert router.handle("txt henry running late") == 'Send to Henry Lee: "running late"?\nReply y to send.'
     assert router.handle("what is for dinner") == "Unknown command. Text help for the list."
+
+
+class FakeMutes:
+    def __init__(self):
+        self.muted = {}
+
+    def mute(self, guid, name):
+        self.muted[guid] = name
+
+    def release_all(self):
+        if not self.muted:
+            return None
+        names, self.muted = list(self.muted.values()), {}
+        return "Unmuted " + ", ".join(names) + "."
+
+
+def test_mute_silences_the_last_group_chat_and_unmute_releases_it(tmp_path):
+    mutes = FakeMutes()
+    router, _ = make(tmp_path, mutes=mutes)
+    assert router.handle("mute") == "No chat to mute yet."
+    router.state.set("last_chat", "iMessage;+;chat1")
+    router.state.set("chat_names", {"iMessage;+;chat1": "Family"})
+    assert router.handle("Mute") == "Muted Family for 1 hr. Text unmute for a summary."
+    assert mutes.muted == {"iMessage;+;chat1": "Family"}
+    assert router.handle("unmute") == "Unmuted Family."
+    assert router.handle("unmute") == "Nothing is muted."
+
+
+def test_only_group_chats_can_be_muted(tmp_path):
+    router, _ = make(tmp_path, mutes=FakeMutes())
+    router.state.set("last_chat", "iMessage;-;+15550001111")
+    assert router.handle("mute") == "Your last chat isn't a group. Only group chats can be muted."
+
+
+def test_spellchecker_never_turns_a_typo_into_a_mute(tmp_path):
+    from openbrick.typo import Spellchecker
+
+    mutes = FakeMutes()
+    router, _ = make(tmp_path, mutes=mutes, interpreter=Spellchecker())
+    router.state.set("last_chat", "iMessage;+;chat1")
+    assert router.handle("cute").startswith("Unknown command")
+    assert mutes.muted == {}

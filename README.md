@@ -38,6 +38,9 @@ You control it by texting **your own main number** from the dumbphone:
 | `r sounds good` | Replies to whoever messaged you last, from your main number. Works for group chats and green-bubble friends. |
 | `@henry on my way` or `to henry on my way` | Sends an iMessage to someone in your contacts. First name, full name, last name or nickname all work. |
 | `@+15550001111 hi` / `@sam@icloud.com hi` | Sends an iMessage to a number or Apple ID |
+| `call mom` | Rings the dumbphone from your main number, then connects you to Mom, who sees your main number ([setup](#calls)) |
+| `mute` | Holds the group chat you last heard from for an hour. Its messages stop arriving. |
+| `unmute` | Ends the mute and texts back a summary of what you missed. A mute that runs out sends the summary by itself. |
 | `go home to union station` | Texts back transit directions, leaving now ([setup](#transit-directions)) |
 | `2fa 0421 github` | Texts back the current code for that account |
 | `2fa 0421` | Lists your 2FA accounts |
@@ -112,7 +115,7 @@ A spare MacBook works well, but it has to stay awake and survive restarts:
 ## What to expect
 
 - **If the iPhone is off or offline,** green-bubble texts stop relaying. Calls and texts to the dumbphone's own number still work, and so do iMessages, as long as the Mac is up.
-- **When you call someone from the dumbphone,** they see the dumbphone's number, not your main one (see the roadmap).
+- **When you call someone from the dumbphone,** they see the dumbphone's number, not your main one. Use [`call name`](#calls) to call as your main number.
 - **`@name` sends as iMessage.** For friends without iPhones, wait for them to text you and use `r`.
 - **Photos** arrive as `(sent an attachment)`. Check them on the iPhone later.
 - **Sending green-bubble texts through BlueBubbles** relies on Text Message Forwarding. It hasn't been tested across every macOS version yet. If replies to Android friends fail, please open an issue with your macOS version.
@@ -157,11 +160,23 @@ Keypads make typos easy. When a text doesn't match any command, openBrick checks
 
 It fixes command words, the names of your saved places and 2FA accounts, and (through the contact matcher) names in your address book. It never changes the text of a message. Short words must be exact, so ordinary sentences such as `did you go to the store` aren't mistaken for commands. Anything that would send a message after a correction waits for your `y`, and directions show the command openBrick understood, e.g. `(go home to union station)`. Unknown places aren't spell-checked, since openBrick has no dictionary of them.
 
-### Optional: a local model for harder cases
+### Optional: Claude for harder cases
 
-For texts the spellchecker can't fix, openBrick can also ask a small AI model running on your own machine. It needs a few GB of free memory, so skip it on a small Mac. The model only ever sees your own commands, never messages people send you.
+For texts the spellchecker can't fix, openBrick can ask Claude through your own Anthropic account, so nothing runs on your Mac. Create an API key at [console.anthropic.com](https://console.anthropic.com) (billed separately from a Claude subscription), then:
 
-It runs a small Qwen model (Qwen2.5 3B Instruct, about 2 GB) on [llama.cpp](https://github.com/ggml-org/llama.cpp):
+```bash
+.venv/bin/pip install -e '.[claude]'
+```
+
+Add an `anthropic` section to `config.yaml`, with `api_key:` set (the file is `chmod 600` and gitignored). The `ANTHROPIC_API_KEY` environment variable also works when you run openBrick by hand, but the launchd service doesn't see your shell's variables. Uses are tiny: a few hundred tokens per garbled text. The default model is `claude-opus-5-5`; `claude-haiku-5-5` is cheaper and faster if you'd rather.
+
+What leaves your Mac: the garbled command and your saved short names (contacts, places, 2FA account names). Texts containing a run of four or more digits, such as a 2FA PIN, are never sent, and message text always comes from what you typed, never from the model. Messages people send you stay local, except for the one case below. Sends still wait for your `y`, directions show what was searched, and anything unclear gets the plain "Unknown command" reply.
+
+**Summaries are the exception.** With `summaries: true` (the default once `anthropic` is configured), the messages from a group chat you muted are sent to Anthropic when you unmute, so Claude can summarize them. Set `summaries: false` to keep them on your Mac; you then get a plain summary (who spoke, plus the latest few messages) instead.
+
+### Optional: a local model
+
+Prefer to keep everything on your own machine? Leave out the `anthropic` section and add an `llm` section instead. It runs a small Qwen model (Qwen2.5 3B Instruct, about 2 GB) on [llama.cpp](https://github.com/ggml-org/llama.cpp) and needs a few GB of free memory, so skip it on a small Mac.
 
 1. Install llama.cpp with `brew install llama.cpp`.
 2. Add the `llm` section to `config.yaml`.
@@ -169,7 +184,23 @@ It runs a small Qwen model (Qwen2.5 3B Instruct, about 2 GB) on [llama.cpp](http
 
 To use a different model, set `OPENBRICK_MODEL` to another Hugging Face GGUF before running the script, e.g. `OPENBRICK_MODEL=Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M` for a faster, less accurate one on an older Mac. Already use [Ollama](https://ollama.com)? Point `llm.url` at `http://127.0.0.1:11434` and set `model` to an Ollama model name.
 
-The same safeguards apply: your words are sent as typed, sends wait for a yes, directions show what was searched, and unclear texts get the plain "Unknown command" reply.
+## Muting group chats
+
+`mute` holds the group chat you last heard from (or replied to) for an hour. Its messages stop reaching the dumbphone, and everything else still comes through. Text `unmute` any time for a summary of what you missed. If you don't, the summary arrives by itself when the hour ends. Held messages survive a restart. Texting `mute` again restarts the hour, and `r` still replies to the muted group. Only group chats can be muted, and there's no typo correction for `mute`, so a stray word can't silence a chat.
+
+## Calls
+
+`call mom` rings the dumbphone from your main number. When you answer, you're connected to Mom, who sees your main number as the caller ID. It uses Twilio, because Apple doesn't let a Mac or a dumbphone place calls as your iPhone number.
+
+```bash
+.venv/bin/pip install -e '.[twilio]'
+```
+
+1. Create a [Twilio](https://www.twilio.com) account and add your main number under **Verified Caller IDs** (Twilio phones it with a code). You don't need to buy a Twilio number.
+2. Add a `calls` section to `config.yaml` with your account SID, auth token and the verified `caller_id`.
+3. Text `call mom` from the dumbphone. A name that needed correcting asks `y` first, and two matching names ask which. Raw numbers work too: `call 2025550123`.
+
+You pay Twilio for both legs of each call, per minute. This path hasn't been tested against a live Twilio account yet; if a call fails, the log shows the error type and you get `Couldn't place the call.`
 
 ## No iPhone? Use Twilio instead
 
@@ -199,11 +230,11 @@ Since the Mac has to stay on anyway, running everything on it is simpler.
 - The BlueBubbles webhook needs `webhook_token`. BlueBubbles doesn't sign its webhooks, so keep port 8787 off the internet.
 - In Twilio mode, requests are checked against Twilio's signature, using `public_url`.
 - SMS isn't encrypted, and caller ID can be spoofed. That's why 2FA needs a PIN and locks for 15 minutes after 5 wrong tries. SMS-delivered codes are still weaker than a 2FA app, so keep banking, email and your Apple ID off the list.
-- `config.yaml` holds every secret. It's in `.gitignore`. Keep it that way.
+- `config.yaml` holds every secret, including any Anthropic and Twilio keys. It's in `.gitignore`. Keep it that way.
+- Claude only receives what the typo-fixing and summary sections above describe. Leave out the `anthropic` section to send nothing off the Mac.
 
 ## Roadmap
 
-- **Calls from your main number.** `call mom` would have Twilio ring the dumbphone, then connect you to Mom showing your main number as caller ID. Twilio allows this once you verify you own the number.
 - **Spotify.** `play radiohead` controls your Spotify Connect speakers at home.
 - **Rides (experimental).** `uber me from home to the airport` gets an estimate, then `YES` to book. Uber and Lyft have no public API for booking your own rides, so this would automate their website. It's fragile, against their terms, and could get your account flagged. Opt-in only.
 

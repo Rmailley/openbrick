@@ -6,8 +6,9 @@ from flask import Flask, Response, abort, request
 from .config import Config
 from .contacts import ContactBook
 from .directions import Directions, Geocoder, TripPlanner
-from .imessage import BlueBubbles, describe, format_incoming, incoming_message, sender
+from .imessage import BlueBubbles, describe, describe_incoming, incoming_message, sender
 from .llm import Interpreter
+from .mute import Mutes
 from .router import Router
 from .sms import RelaySMS, TwilioSMS
 from .state import State
@@ -36,10 +37,35 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
     directions = None
     if d := config.directions:
         directions = Directions(Geocoder(d.geocoder_url, d.viewbox), TripPlanner(d.otp_url), d.places)
-    # The spellchecker is free and always on; a local model, if configured, only gets what it can't fix.
-    interpreter = Fallback(Spellchecker(), *([Interpreter(config.llm.url, config.llm.model)] if config.llm else []))
     book = ContactBook(config.contacts, fetch=imessage.contacts if imessage else None)
-    router = Router(book, state, imessage=imessage, twofa=twofa, directions=directions, interpreter=interpreter)
+
+    # The spellchecker is free and always on. Whatever it can't fix goes to Claude if you've set up an
+    # Anthropic account, else to a local llama.cpp model if you run one.
+    model, summarizer, caller = None, None, None
+    if a := config.anthropic:
+        import anthropic
+
+        from .claude import ClaudeInterpreter, ClaudeSummarizer
+
+        client = anthropic.Anthropic(api_key=a.api_key) if a.api_key else anthropic.Anthropic()
+        model = ClaudeInterpreter(client, a.model)
+        summarizer = ClaudeSummarizer(client, a.model) if a.summaries else None
+    elif config.llm:
+        model = Interpreter(config.llm.url, config.llm.model)
+    interpreter = Fallback(Spellchecker(), *([model] if model else []))
+
+    if c := config.calls:
+        from twilio.rest import Client
+
+        from .calls import Caller
+
+        caller = Caller(Client(c.account_sid, c.auth_token), config.owner_number, c.caller_id)
+
+    mutes = Mutes(state, summarizer)
+    router = Router(
+        book, state, imessage=imessage, twofa=twofa, directions=directions, interpreter=interpreter,
+        caller=caller, mutes=mutes,
+    )
 
     app = Flask(__name__)
 
@@ -52,6 +78,13 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
             log.error("%s failed: %s", what, describe(e))
             return False
 
+    def sweep() -> None:
+        """Send the summary for every group mute that has run out."""
+        for text in mutes.sweep():
+            _deliver(text, "mute summary")
+
+    app.config["sweep"] = sweep  # __main__ calls this once a minute
+
     if config.bluebubbles:
         token = config.bluebubbles.webhook_token
 
@@ -60,6 +93,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
             if not hmac.compare_digest(request.args.get("token", ""), token):
                 log.warning("webhook rejected: bad token")
                 abort(403)
+            sweep()
             msg = incoming_message(request.get_json(silent=True) or {})
             if msg is None:
                 return "", 204
@@ -75,11 +109,19 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
                             log.info("replied to owner")
                 return "", 204
 
-            if result := format_incoming(msg, book.label):
-                chat_guid, text = result
+            if d := describe_incoming(msg, book.label):
+                chat_guid, who, group, text = d
+                if group and (state.get("chat_names") or {}).get(chat_guid) != group:
+                    state.set("chat_names", {**(state.get("chat_names") or {}), chat_guid: group})
+                if mutes.is_muted(chat_guid):
+                    # Held for the summary. It doesn't become "last chat", so `r` still goes where it did.
+                    mutes.hold(chat_guid, who, text)
+                    log.info("held a message in a muted group")
+                    return "", 204
                 state.set("last_chat", chat_guid)
-                if _deliver(text, f"forward from {book.label(sender(msg))}"):
-                    log.info("forwarded message from %s", book.label(sender(msg)))
+                line = f"[{who} in {group}] {text}" if group else f"[{who}] {text}"
+                if _deliver(line, f"forward from {who}"):
+                    log.info("forwarded message from %s", who)
             return "", 204
 
     if config.transport == "twilio":
@@ -95,6 +137,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
             if not validator.validate(url, request.form, request.headers.get("X-Twilio-Signature", "")):
                 abort(403)
 
+            sweep()
             resp = MessagingResponse()
             if request.form.get("From") == config.owner_number:
                 log.info("command from owner")

@@ -19,7 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 twilio = ["twilio>=9.0"]
-dev = ["pytest>=8.0", "twilio>=9.0"]
+claude = ["anthropic>=1.0"]
+dev = ["pytest>=8.0", "twilio>=9.0", "anthropic>=1.0"]
 
 [project.scripts]
 openbrick = "openbrick.__main__:main"

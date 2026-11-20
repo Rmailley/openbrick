@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,6 +42,20 @@ class LLMConfig:
 
 
 @dataclass
+class AnthropicConfig:
+    api_key: str | None = None  # None: use ANTHROPIC_API_KEY or `ant auth login`
+    model: str = "claude-opus-5-5"
+    summaries: bool = True  # send muted group messages to Claude to summarize them
+
+
+@dataclass
+class CallsConfig:
+    account_sid: str
+    auth_token: str
+    caller_id: str  # your main number, verified in Twilio
+
+
+@dataclass
 class Config:
     transport: str
     owner_number: str
@@ -52,8 +67,28 @@ class Config:
     data_dir: Path
     directions: DirectionsConfig | None = None
     llm: LLMConfig | None = None
+    anthropic: AnthropicConfig | None = None
+    calls: CallsConfig | None = None
     host: str = "127.0.0.1"
     port: int = 8787
+
+
+def load_env(path: str | Path) -> None:
+    """Put KEY=value lines from a .env file into the environment, without overriding what's already set.
+
+    This is how the launchd service gets ANTHROPIC_API_KEY, since it doesn't inherit your shell's variables.
+    """
+    path = Path(path)
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        value = value.strip().strip("\"'")
+        if key.strip().removeprefix("export ").strip() and value:
+            os.environ.setdefault(key.strip().removeprefix("export ").strip(), value)
 
 
 def load(path: str | Path) -> Config:
@@ -86,6 +121,8 @@ def load(path: str | Path) -> Config:
     bb = raw.get("bluebubbles")
     tw = raw.get("twilio")
     llm = raw.get("llm")
+    claude = raw.get("anthropic")
+    calls = raw.get("calls")
     return Config(
         transport=transport,
         owner_number=str(raw["owner_number"]),
@@ -97,6 +134,8 @@ def load(path: str | Path) -> Config:
         data_dir=Path(raw.get("data_dir", "./data")),
         directions=directions,
         llm=LLMConfig(**llm) if llm is not None else None,
+        anthropic=AnthropicConfig(**claude) if claude is not None else None,
+        calls=CallsConfig(**calls) if calls else None,
         host=raw.get("host", "127.0.0.1"),
         port=int(raw.get("port", 8787)),
     )

@@ -46,7 +46,7 @@ fi
 say "Installing openBrick"
 [[ -d .venv ]] || "$PYTHON" -m venv .venv
 .venv/bin/pip install --quiet --upgrade pip
-.venv/bin/pip install --quiet -e .
+.venv/bin/pip install --quiet -e '.[claude,twilio]'
 
 say "Running the tests"
 .venv/bin/pip install --quiet -e '.[dev]'

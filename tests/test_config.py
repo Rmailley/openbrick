@@ -56,3 +56,33 @@ def test_example_config_loads():
     assert c.twofa.pin == "0421"
     assert "home" in c.directions.places
     assert c.llm.model
+
+
+def test_anthropic_and_calls_sections_are_optional(tmp_path):
+    c = load(write(tmp_path, BB))
+    assert c.anthropic is None and c.calls is None
+
+    c = load(write(tmp_path, BB + "anthropic: {model: claude-haiku-5-5, summaries: false}\n"
+                   "calls: {account_sid: AC1, auth_token: a, caller_id: '+15559990000'}\n"))
+    assert c.anthropic.model == "claude-haiku-5-5" and c.anthropic.summaries is False
+    assert c.anthropic.api_key is None
+    assert c.calls.caller_id == "+15559990000"
+    assert load(write(tmp_path, BB + "anthropic: {}\n")).anthropic.model == "claude-opus-5-5"
+
+
+def test_load_env_reads_keys_without_overriding_the_environment(tmp_path, monkeypatch):
+    from openbrick.config import load_env
+
+    monkeypatch.delenv("OB_NEW", raising=False)
+    monkeypatch.delenv("OB_EMPTY", raising=False)
+    monkeypatch.setenv("OB_SET", "from-shell")
+    env = tmp_path / ".env"
+    env.write_text("# comment\nOB_NEW=\"abc\"\nexport OB_SET=from-file\nOB_EMPTY=\n\nnot a line\n")
+    load_env(env)
+    load_env(tmp_path / "missing.env")
+    import os
+
+    assert os.environ["OB_NEW"] == "abc"
+    assert os.environ["OB_SET"] == "from-shell"
+    assert "OB_EMPTY" not in os.environ
+    monkeypatch.delenv("OB_NEW")

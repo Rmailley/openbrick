@@ -55,16 +55,24 @@ def sender(msg: dict) -> str:
     return (msg.get("handle") or {}).get("address", "unknown")
 
 
-def format_incoming(msg: dict, label_for) -> tuple[str, str] | None:
-    """Turn an incoming message into (chat_guid, sms_text), or None if there's nothing to forward."""
-    chat = msg["chats"][0]
-    label = label_for(sender(msg))
-    if ";+;" in chat["guid"]:
-        label = f"{label} in {chat.get('displayName') or 'group'}"
+def describe_incoming(msg: dict, label_for) -> tuple[str, str, str | None, str] | None:
+    """Break an incoming message into (chat_guid, sender, group_name, text); None if there's nothing to forward.
 
+    group_name is None for a one-on-one chat. Attachments with no words become "(sent an attachment)".
+    """
+    chat = msg["chats"][0]
+    group = (chat.get("displayName") or "group") if ";+;" in chat["guid"] else None
     text = (msg.get("text") or "").strip()
     if not text:
         if not msg.get("attachments"):
             return None
         text = "(sent an attachment)"
-    return chat["guid"], f"[{label}] {text}"
+    return chat["guid"], label_for(sender(msg)), group, text
+
+
+def format_incoming(msg: dict, label_for) -> tuple[str, str] | None:
+    """Turn an incoming message into (chat_guid, sms_text), or None if there's nothing to forward."""
+    if (d := describe_incoming(msg, label_for)) is None:
+        return None
+    guid, who, group, text = d
+    return guid, f"[{who} in {group}] {text}" if group else f"[{who}] {text}"
