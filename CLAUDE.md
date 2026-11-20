@@ -24,7 +24,8 @@ Two message directions, both entering through webhooks:
 
 Key pieces:
 
-- `router.py`: regex-based command parsing (`r`, `@name`/`to name`, `go A to B`, `2fa`, `help`). Raises `Unresolved` with the user-facing message. Multi-turn flows (pick a number among ambiguous contacts, `y` to confirm a fuzzy-corrected name) are stored as `pending` in `State` and checked first on the next message. Unmatched text falls through to the optional `Interpreter`.
+- `router.py`: regex-based command parsing (`r`, `@name`/`to name`, `go A to B`, `2fa`, `help`). Raises `Unresolved` with the user-facing message. Multi-turn flows (pick a number among ambiguous contacts, `y` to confirm a fuzzy-corrected name) are stored as `pending` in `State` and checked first on the next message. Unmatched text falls through to the interpreter chain (`Spellchecker`, then the optional model).
+- `typo.py`: built-in, always-on typo fixer (Damerau-Levenshtein against command verbs, saved places and 2FA accounts). Same `interpret(text, known) -> command | None` interface as `llm.py`; `app.py` chains it ahead of the optional model with `Fallback`.
 - `llm.py`: optional typo fixer calling a local llama.cpp server (Qwen) with a JSON schema; only ever sees the owner's commands, never incoming messages. Its output is mapped back onto the same router actions.
 - `contacts.py`: `ContactBook` merges `contacts:` from config (priority) with the address book fetched via BlueBubbles (`imessage.contacts`); handles fuzzy and ambiguous matches.
 - `sms.py`: two transports behind one `.send()` interface — `RelaySMS` (sends via BlueBubbles into the owner chat tracked as `owner_chat` in State) and `TwilioSMS` (twilio is an optional dependency, imported lazily).

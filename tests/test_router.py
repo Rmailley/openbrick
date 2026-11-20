@@ -270,3 +270,18 @@ def test_remembers_the_address_that_worked(tmp_path):
     router = Router(book, State(tmp_path / "s.json"), imessage=im)
     assert router.handle("to dad two") == "Sent to Dad."
     assert attempts == ["iMessage;-;+12025550202"]
+
+
+def test_spellchecker_fixes_typos_through_the_router_without_a_model(tmp_path):
+    from openbrick.typo import Spellchecker
+
+    d = FakeDirections()
+    router, im = make(tmp_path, directions=d, interpreter=Spellchecker())
+    router.state.set("last_chat", "SMS;-;+15550001111")
+    assert router.handle("hepl") == HELP
+    assert router.handle("rply see u soon") == "Did you mean: r see u soon\nReply y to send."
+    assert im.sent == []
+    router.handle("y")
+    assert im.sent == [("SMS;-;+15550001111", "see u soon")]
+    assert router.handle("txt henry running late") == 'Send to Henry Lee: "running late"?\nReply y to send.'
+    assert router.handle("what is for dinner") == "Unknown command. Text help for the list."

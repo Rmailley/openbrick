@@ -39,8 +39,8 @@ directions:
     home: "1600 Pennsylvania Ave NW, Washington, DC"
     work: "38.8977,-77.0365"         # an address or lat,lon
 
-# Optional. A small model on your own machine that fixes typo'd commands. Only used when a text
-# doesn't parse, and anything it turns into a message asks you to confirm first.
+# Optional. A small model on your own machine for typos the built-in spellchecker can't fix (which
+# needs no setup). Only used when a text doesn't parse and the spellchecker has no answer, and anything it turns into a message asks you to confirm first.
 # Defaults to llama.cpp's llama-server on port 8081 (scripts/install-mac-services.sh starts it).
 # For Ollama instead: url "http://127.0.0.1:11434", model "qwen2.5:3b".
 llm:

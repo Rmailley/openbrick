@@ -145,7 +145,21 @@ The DC street map covers the District only. For trips into Maryland or Virginia,
 
 ## Typo fixing
 
-Keypads make typos easy. When a text doesn't match any command, openBrick can ask a small AI model running on your own machine what you meant. Nothing leaves your house, and the model only ever sees your own commands, never messages people send you.
+Keypads make typos easy. When a text doesn't match any command, openBrick checks it against the words it knows, using edit distance (one slip is one edit: a wrong, missing, extra or swapped letter). It's built in, always on, and needs no model, so it runs fine on an old Mac.
+
+| You text | openBrick runs |
+|---|---|
+| `rply see u soon` | `r see u soon` (after you reply `y`) |
+| `txt sam running late` | `@sam running late` (after you reply `y`) |
+| `dirctions hom 2 union statoin` | `go home to union statoin` |
+| `2fa1234 gogle` | `2fa 1234 google` |
+| `hepl` | `help` |
+
+It fixes command words, the names of your saved places and 2FA accounts, and (through the contact matcher) names in your address book. It never changes the text of a message. Short words must be exact, so ordinary sentences such as `did you go to the store` aren't mistaken for commands. Anything that would send a message after a correction waits for your `y`, and directions show the command openBrick understood, e.g. `(go home to union station)`. Unknown places aren't spell-checked, since openBrick has no dictionary of them.
+
+### Optional: a local model for harder cases
+
+For texts the spellchecker can't fix, openBrick can also ask a small AI model running on your own machine. It needs a few GB of free memory, so skip it on a small Mac. The model only ever sees your own commands, never messages people send you.
 
 It runs a small Qwen model (Qwen2.5 3B Instruct, about 2 GB) on [llama.cpp](https://github.com/ggml-org/llama.cpp):
 
@@ -155,14 +169,7 @@ It runs a small Qwen model (Qwen2.5 3B Instruct, about 2 GB) on [llama.cpp](http
 
 To use a different model, set `OPENBRICK_MODEL` to another Hugging Face GGUF before running the script, e.g. `OPENBRICK_MODEL=Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M` for a faster, less accurate one on an older Mac. Already use [Ollama](https://ollama.com)? Point `llm.url` at `http://127.0.0.1:11434` and set `model` to an Ollama model name.
 
-Safeguards:
-
-- **Your words are sent as typed.** The model only works out the command and who it's for. Message text always comes from what you typed, so `tell dad i love u` sends "i love u", and the model can't make up or reword a message.
-- **Sends wait for a yes.** Anything that would send a message after a correction waits for you to reply `y`.
-- **You can see what it searched.** Directions show the command openBrick understood, e.g. `(go home to National Park)`, so you can catch a wrong guess.
-- **Unclear texts get a plain reply.** If the model isn't sure, you get the normal "Unknown command" reply.
-
-On an Apple Silicon Mac a correction takes under a second. Older Intel Macs take several seconds, which is still fine for a text reply.
+The same safeguards apply: your words are sent as typed, sends wait for a yes, directions show what was searched, and unclear texts get the plain "Unknown command" reply.
 
 ## No iPhone? Use Twilio instead
 
@@ -209,7 +216,7 @@ Instagram is not on the roadmap.
 .venv/bin/pytest
 ```
 
-New commands go in `src/openbrick/router.py`. If a command can be typo'd, also teach `src/openbrick/llm.py` about it. Keep replies short, since every reply is read on a 2-inch screen.
+New commands go in `src/openbrick/router.py`. If a command can be typo'd, also add its verb to `VERBS` in `src/openbrick/typo.py` (and `llm.py` if you use the model). Keep replies short, since every reply is read on a 2-inch screen.
 
 ## License
 

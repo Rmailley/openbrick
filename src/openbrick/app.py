@@ -11,6 +11,7 @@ from .llm import Interpreter
 from .router import Router
 from .sms import RelaySMS, TwilioSMS
 from .state import State
+from .typo import Fallback, Spellchecker
 from .twofa import TwoFA
 
 log = logging.getLogger("openbrick.app")
@@ -35,7 +36,8 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
     directions = None
     if d := config.directions:
         directions = Directions(Geocoder(d.geocoder_url, d.viewbox), TripPlanner(d.otp_url), d.places)
-    interpreter = Interpreter(config.llm.url, config.llm.model) if config.llm else None
+    # The spellchecker is free and always on; a local model, if configured, only gets what it can't fix.
+    interpreter = Fallback(Spellchecker(), *([Interpreter(config.llm.url, config.llm.model)] if config.llm else []))
     book = ContactBook(config.contacts, fetch=imessage.contacts if imessage else None)
     router = Router(book, state, imessage=imessage, twofa=twofa, directions=directions, interpreter=interpreter)
 
