@@ -23,6 +23,12 @@ class BlueBubbles:
         )
         r.raise_for_status()
 
+    def ping(self) -> float:
+        """Seconds BlueBubbles takes to answer; raises if it doesn't."""
+        r = self.session.get(f"{self.url}/api/v1/ping", params={"password": self.password}, timeout=10)
+        r.raise_for_status()
+        return r.elapsed.total_seconds()
+
     def contacts(self) -> list[dict]:
         r = self.session.get(f"{self.url}/api/v1/contact", params={"password": self.password}, timeout=30)
         r.raise_for_status()

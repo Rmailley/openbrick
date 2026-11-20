@@ -13,12 +13,19 @@ log = logging.getLogger("openbrick")
 
 
 def _every_minute(app) -> None:
+    minutes = 0
     while True:
         time.sleep(60)
+        minutes += 1
         try:
             app.config["sweep"]()
         except Exception:
             log.exception("sweeping expired mutes failed")
+        if minutes % 60 == 0:
+            try:
+                app.config["health"]()
+            except Exception:
+                log.exception("health check failed")
 
 
 def main() -> None:
@@ -28,7 +35,7 @@ def main() -> None:
     load_env(Path(path).resolve().parent / ".env")  # next to config.yaml
     config = load(path)
     app = create_app(config)
-    # A mute that runs out while nobody texts still gets its summary sent.
+    # A mute that runs out while nobody texts still gets its summary sent, and the log gets an hourly health line.
     threading.Thread(target=_every_minute, args=(app,), daemon=True).start()
     print(f"openBrick listening on http://{config.host}:{config.port}")
     serve(app, host=config.host, port=config.port)

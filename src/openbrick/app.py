@@ -6,6 +6,7 @@ from flask import Flask, Response, abort, request
 from .config import Config
 from .contacts import ContactBook
 from .directions import Directions, Geocoder, TripPlanner
+from .health import Stats, report
 from .imessage import BlueBubbles, describe, describe_incoming, incoming_message, sender
 from .llm import Interpreter
 from .mute import Mutes
@@ -62,6 +63,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
         caller = Caller(Client(c.account_sid, c.auth_token), config.owner_number, c.caller_id)
 
     mutes = Mutes(state, summarizer)
+    stats = Stats()
     router = Router(
         book, state, imessage=imessage, twofa=twofa, directions=directions, interpreter=interpreter,
         caller=caller, mutes=mutes,
@@ -75,6 +77,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
             sms.send(text)
             return True
         except Exception as e:
+            stats.count("send_failed")
             log.error("%s failed: %s", what, describe(e))
             return False
 
@@ -85,6 +88,12 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
 
     app.config["sweep"] = sweep  # __main__ calls this once a minute
 
+    def health() -> None:
+        healthy, line = report(stats, imessage)
+        (log.info if healthy else log.warning)(line)
+
+    app.config["health"] = health  # __main__ calls this once an hour
+
     if config.bluebubbles:
         token = config.bluebubbles.webhook_token
 
@@ -93,6 +102,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
             if not hmac.compare_digest(request.args.get("token", ""), token):
                 log.warning("webhook rejected: bad token")
                 abort(403)
+            stats.webhook()
             sweep()
             msg = incoming_message(request.get_json(silent=True) or {})
             if msg is None:
@@ -103,6 +113,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
                 if config.transport == "relay":
                     state.set("owner_chat", msg["chats"][0]["guid"])
                     log.info("command from owner")
+                    stats.count("commands")
                     reply = router.handle(msg.get("text") or "")
                     if reply:
                         if _deliver(reply, "reply to owner"):
@@ -121,6 +132,7 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
                 state.set("last_chat", chat_guid)
                 line = f"[{who} in {group}] {text}" if group else f"[{who}] {text}"
                 if _deliver(line, f"forward from {who}"):
+                    stats.count("forwarded")
                     log.info("forwarded message from %s", who)
             return "", 204
 
