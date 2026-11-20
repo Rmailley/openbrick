@@ -23,6 +23,17 @@ class BlueBubbles:
         )
         r.raise_for_status()
 
+    def messages_after(self, since_ms: int) -> list[dict]:
+        """Messages recorded since this time, oldest first, in the same shape the webhook delivers."""
+        r = self.session.post(
+            f"{self.url}/api/v1/message/query",
+            params={"password": self.password},
+            json={"after": since_ms, "sort": "ASC", "limit": 100, "with": ["chat", "handle", "attachment"]},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["data"]
+
     def ping(self) -> float:
         """Seconds BlueBubbles takes to answer; raises if it doesn't."""
         r = self.session.get(f"{self.url}/api/v1/ping", params={"password": self.password}, timeout=10)

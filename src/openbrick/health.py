@@ -66,6 +66,7 @@ def report(stats: Stats, imessage) -> tuple[bool, str]:
         f"last_webhook={_ago(stats.last_webhook)}",
         f"forwarded={counts.get('forwarded', 0)}",
         f"commands={counts.get('commands', 0)}",
+        f"polled={counts.get('polled', 0)}",
         f"send_failures={failures}",
     ]
     if power := battery():

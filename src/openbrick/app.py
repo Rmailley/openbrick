@@ -1,5 +1,8 @@
 import hmac
 import logging
+import threading
+import time
+from collections import deque
 
 from flask import Flask, Response, abort, request
 
@@ -17,6 +20,9 @@ from .typo import Fallback, Spellchecker
 from .twofa import TwoFA
 
 log = logging.getLogger("openbrick.app")
+
+OVERLAP_MS = 2 * 60 * 1000  # look back a little: a message's timestamp can predate when it reached the Mac
+CATCH_UP_MS = 60 * 60 * 1000  # after downtime, catch up on at most an hour
 
 
 def create_app(config: Config, sms=None, imessage=None) -> Flask:
@@ -94,6 +100,73 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
 
     app.config["health"] = health  # __main__ calls this once an hour
 
+    handling = threading.RLock()  # the webhook and the poller can find the same message at the same moment
+    seen = deque(state.get("seen") or [], maxlen=300)
+
+    def claim(msg: dict) -> bool:
+        """True the first time a message shows up, whether the webhook or the poller finds it first."""
+        guid = msg.get("guid")
+        if guid is None:
+            return True
+        if guid in seen:
+            return False
+        seen.append(guid)
+        state.set("seen", list(seen))
+        return True
+
+    def process(msg: dict) -> None:
+        if sender(msg) == config.owner_number:
+            # The dumbphone texting your main number is a command. Over Twilio, commands arrive at /sms instead.
+            if config.transport == "relay":
+                state.set("owner_chat", msg["chats"][0]["guid"])
+                log.info("command from owner")
+                stats.count("commands")
+                reply = router.handle(msg.get("text") or "")
+                if reply:
+                    if _deliver(reply, "reply to owner"):
+                        log.info("replied to owner")
+            return
+
+        if d := describe_incoming(msg, book.label):
+            chat_guid, who, group, text = d
+            if group and (state.get("chat_names") or {}).get(chat_guid) != group:
+                state.set("chat_names", {**(state.get("chat_names") or {}), chat_guid: group})
+            if mutes.is_muted(chat_guid):
+                # Held for the summary. It doesn't become "last chat", so `r` still goes where it did.
+                mutes.hold(chat_guid, who, text)
+                log.info("held a message in a muted group")
+                return
+            state.set("last_chat", chat_guid)
+            line = f"[{who} in {group}] {text}" if group else f"[{who}] {text}"
+            if _deliver(line, f"forward from {who}"):
+                stats.count("forwarded")
+                log.info("forwarded message from %s", who)
+
+    def poll() -> None:
+        """Pick up messages the webhook never delivered (or delivered late). __main__ calls this once a minute."""
+        if imessage is None or not hasattr(imessage, "messages_after"):
+            return
+        now = int(time.time() * 1000)
+        cursor = max(state.get("poll_cursor") or now, now - CATCH_UP_MS)
+        try:
+            messages = imessage.messages_after(cursor - OVERLAP_MS)
+        except Exception as e:
+            stats.count("poll_failed")
+            log.warning("poll failed: %s", describe(e))
+            return
+        newest = cursor
+        with handling:
+            for raw in messages:
+                newest = max(newest, raw.get("dateCreated") or 0)
+                msg = incoming_message({"type": "new-message", "data": raw})
+                if msg is not None and claim(msg):
+                    log.info("poll found a message the webhook hadn't delivered")
+                    stats.count("polled")
+                    process(msg)
+        state.set("poll_cursor", newest)
+
+    app.config["poll"] = poll
+
     if config.bluebubbles:
         token = config.bluebubbles.webhook_token
 
@@ -105,35 +178,10 @@ def create_app(config: Config, sms=None, imessage=None) -> Flask:
             stats.webhook()
             sweep()
             msg = incoming_message(request.get_json(silent=True) or {})
-            if msg is None:
-                return "", 204
-
-            if sender(msg) == config.owner_number:
-                # The dumbphone texting your main number is a command. Over Twilio, commands arrive at /sms instead.
-                if config.transport == "relay":
-                    state.set("owner_chat", msg["chats"][0]["guid"])
-                    log.info("command from owner")
-                    stats.count("commands")
-                    reply = router.handle(msg.get("text") or "")
-                    if reply:
-                        if _deliver(reply, "reply to owner"):
-                            log.info("replied to owner")
-                return "", 204
-
-            if d := describe_incoming(msg, book.label):
-                chat_guid, who, group, text = d
-                if group and (state.get("chat_names") or {}).get(chat_guid) != group:
-                    state.set("chat_names", {**(state.get("chat_names") or {}), chat_guid: group})
-                if mutes.is_muted(chat_guid):
-                    # Held for the summary. It doesn't become "last chat", so `r` still goes where it did.
-                    mutes.hold(chat_guid, who, text)
-                    log.info("held a message in a muted group")
-                    return "", 204
-                state.set("last_chat", chat_guid)
-                line = f"[{who} in {group}] {text}" if group else f"[{who}] {text}"
-                if _deliver(line, f"forward from {who}"):
-                    stats.count("forwarded")
-                    log.info("forwarded message from %s", who)
+            if msg is not None:
+                with handling:
+                    if claim(msg):
+                        process(msg)
             return "", 204
 
     if config.transport == "twilio":

@@ -21,6 +21,10 @@ def _every_minute(app) -> None:
             app.config["sweep"]()
         except Exception:
             log.exception("sweeping expired mutes failed")
+        try:
+            app.config["poll"]()
+        except Exception:
+            log.exception("polling for messages failed")
         if minutes % 60 == 0:
             try:
                 app.config["health"]()

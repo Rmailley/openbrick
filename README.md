@@ -119,6 +119,7 @@ A spare MacBook works well, but it has to stay awake and survive restarts:
 - **When you call someone from the dumbphone,** they see the dumbphone's number, not your main one. Use [`call name`](#calls) to call as your main number.
 - **`@name` sends as iMessage.** For friends without iPhones, wait for them to text you and use `r`.
 - **Photos** arrive as `(sent an attachment)`. Check them on the iPhone later.
+- **Missed messages:** every minute openBrick asks BlueBubbles for messages the webhook never delivered and forwards them, so a dropped or late webhook costs at most a minute. Nothing is forwarded twice, and after downtime it catches up on at most an hour.
 - **Emoji** are spelled out, since a dumbphone shows boxes or drops the text: 👍 arrives as `<thumbs up emoji>`.
 - **Health check:** once an hour the log gets a line like `health ok: bluebubbles=up 60ms up=3h02m last_webhook=4m ago forwarded=7 commands=2 send_failures=0 battery=96% discharging`. It's logged as a warning (`health PROBLEM`) if BlueBubbles doesn't answer or a send failed that hour. `grep health ~/Library/Logs/openbrick.log`.
 - **Sending green-bubble texts through BlueBubbles** relies on Text Message Forwarding. It hasn't been tested across every macOS version yet. If replies to Android friends fail, please open an issue with your macOS version.
